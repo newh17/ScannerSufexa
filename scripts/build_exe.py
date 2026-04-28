@@ -167,7 +167,7 @@ a = Analysis(
         'sqlite3',
     ],
     hookspath=[],
-    hooksconfig={},
+    hooksconfig={{}},
     runtime_hooks=[],
     excludes=[
         'matplotlib',
