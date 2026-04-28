@@ -227,7 +227,7 @@ coll = COLLECT(
         print("   (Esto puede tardar varios minutos...)\n")
 
         cmd = [
-            'pyinstaller',
+            sys.executable, '-m', 'PyInstaller',
             '--clean',
             '--noconfirm',
             str(self.spec_file)
