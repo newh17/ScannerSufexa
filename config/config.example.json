@@ -1,0 +1,25 @@
+{
+  "folders": {
+    "scanner_input": "C:\\scan\\entrada",
+    "output_base": "C:\\albaranes",
+    "errors": "C:\\albaranes\\errores"
+  },
+  "tesseract": {
+    "path": "C:\\Program Files\\Tesseract-OCR\\tesseract.exe",
+    "language": "spa",
+    "config": "--psm 6"
+  },
+  "database": {
+    "path": "data/database/albaranes.db"
+  },
+  "logging": {
+    "path": "data/logs/app.log",
+    "level": "INFO",
+    "max_bytes": 10485760,
+    "backup_count": 5
+  },
+  "monitor": {
+    "tiempo_espera": 2.0,
+    "intervalo_chequeo": 1.0
+  }
+}

@@ -1,0 +1,28 @@
+METALCRISMAR, S.L.
+Carrer de la Indústria, 45
+08025 Barcelona
+
+ALBARÀ DE LLIURAMENT
+
+Data 23/01/2026
+Albarà núm. 71206
+
+DESTINATARI:
+Empresa Cliente XYZ
+Carrer Example, 123
+
+DESCRIPCIÓ                      QUANTITAT    PREU UNITARI    IMPORT
+-----------------------------------------------------------------
+Planxa d'acer inoxidable           15          45.50 €      682.50 €
+Tub galvanitzat 50mm               8           12.30 €       98.40 €
+Perfil angular 40x40              25           8.75 €       218.75 €
+
+                                           SUBTOTAL:        999.65 €
+                                           IVA 21%:         209.93 €
+                                           TOTAL:         1,209.58 €
+
+Observacions: Material entregat en perfecte estat
+Signatura del receptor: ___________________
+
+METALCRISMAR, S.L. - CIF: B12345678
+Tel: 93 123 45 67 - info@metalcrismar.com

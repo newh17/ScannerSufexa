@@ -1,0 +1,30 @@
+EMPRESA EJEMPLO S.A.
+Polígono Industrial Norte
+Nave 15-B
+28850 Madrid
+
+========================================
+        ALBARÀ DE ENTREGA
+========================================
+
+Data: 15/02/2026
+Albarà núm.: 82534
+
+Cliente: Distribuciones Sur S.L.
+Dirección: Av. Principal 456
+
+PRODUCTOS ENTREGADOS:
+
+Ref.    Descripción              Cantidad
+------------------------------------------
+001     Componente electrónico      100
+002     Cable coaxial RG-58          50
+003     Conectores BNC               200
+
+Fecha de entrega: 15/02/2026
+Transportista: Transportes Rápidos S.L.
+
+Firma y sello: _______________
+
+EMPRESA EJEMPLO S.A.
+CIF: A98765432
