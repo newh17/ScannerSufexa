@@ -168,6 +168,7 @@ a = Analysis(
         'presentation',
         'presentation.ui',
         'presentation.ui.components',
+        'presentation.controllers',
         'application',
         'application.use_cases',
         'application.services',
