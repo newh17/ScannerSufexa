@@ -50,15 +50,16 @@ class ExtractorDatosService:
         # \b al inicio ancla al inicio de palabra.
         # (?!\w) en lugar de \b al final: evita fallar cuando el sufijo
         # acaba en "." (punto = carácter no-word, \b no encuentra frontera).
-        r'\bS\.L\.U?\.?(?!\w)'       # S.L. / S.L.U.
-        r'|\bS\.A\.?(?!\w)'          # S.A.
-        r'|\bS\.C\.?(?!\w)'          # S.C. (Sociedad Civil)
-        r'|\bS\.COOP\.?(?!\w)'       # S.COOP.
+        r'\bS\.L\.U?\.?(?!\w)'              # S.L. / S.L.U.
+        r'|\bS\.A\.?(?!\w)'               # S.A.
+        r'|\bS\.C\.?(?!\w)'               # S.C. (Sociedad Civil)
+        r'|\bC\.B\.?(?!\w)'               # C.B. (Comunidad de Bienes)
+        r'|\bS\.COOP\.?(?!\w)'            # S.COOP.
         r'|\bCOOP\.(?:VAL\.)?LTDA\.?(?!\w)'  # COOP.VAL.LTDA. / COOP.LTDA.
-        r'|\bLTDA\.?(?!\w)'          # LTDA. sola
-        r'|\bCOOP\.?(?!\w)'          # COOP. sola
-        r'|\bS\.C\.P\.?(?!\w)'       # S.C.P. (Sociedad Civil Profesional)
-        r'|\bS\.L\.L\.?(?!\w)',      # S.L.L. (Soc. Limitada Laboral)
+        r'|\bLTDA\.?(?!\w)'               # LTDA. sola
+        r'|\bCOOP\.?(?!\w)'               # COOP. sola
+        r'|\bS\.C\.P\.?(?!\w)'            # S.C.P. (Sociedad Civil Profesional)
+        r'|\bS\.L\.L\.?(?!\w)',           # S.L.L. (Soc. Limitada Laboral)
         re.IGNORECASE
     )
 
@@ -226,13 +227,24 @@ class ExtractorDatosService:
 
             score = 0
 
-            if self.SUFIJOS_EMPRESA.search(linea):
+            tiene_sufijo = bool(self.SUFIJOS_EMPRESA.search(linea))
+            if tiene_sufijo:
                 score += 20
 
-            # Línea mayúsculas con longitud razonable
+            # Palabras reales de la línea (mínimo 2 letras)
+            palabras = [w for w in re.split(r'[\s,\.]+', linea)
+                        if re.search(r'[A-Za-záéíóúÁÉÍÓÚñÑ]{2,}', w)]
+
+            # Sin sufijo: descartar líneas de 1 sola palabra (son pueblos, cabeceras, etc.)
+            if not tiene_sufijo and len(palabras) < 2:
+                continue
+
             solo_letras = re.sub(r'[^A-Za-záéíóúàèìòùÁÉÍÓÚÀÈÌÒÙñÑ]', '', linea)
-            if solo_letras and solo_letras.isupper() and len(linea) <= 60:
-                score += 5
+            if solo_letras:
+                if solo_letras.isupper() and len(linea) <= 60:
+                    score += 5  # Todo en mayúsculas: empresa o nombre propio en caps
+                elif all(w[0].isupper() for w in palabras if w):
+                    score += 3  # Title Case: nombre propio en mayúscula inicial
 
             if score > 0:
                 candidatos.append((linea, score))
