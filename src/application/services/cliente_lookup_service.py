@@ -42,7 +42,7 @@ class ClienteLookupService:
     Si no → devuelve None (el albarán irá a errores para revisión manual).
     """
 
-    UMBRAL = 0.55   # por debajo de esto el OCR falló demasiado → error manual
+    UMBRAL = 0.45   # por debajo de esto el OCR falló demasiado → error manual
 
     def __init__(self, ruta_csv: Optional[str] = None):
         self._clientes: list[str] = []

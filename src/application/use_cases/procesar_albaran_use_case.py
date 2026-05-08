@@ -192,12 +192,18 @@ class ProcesarAlbaranUseCase:
 
                 # El nombre final SIEMPRE viene del Excel de clientes.
                 # Si no hay coincidencia suficiente → None → irá a errores.
-                if self.cliente_lookup:
+                if self.cliente_lookup and self.cliente_lookup.total_clientes() > 0:
                     nombre_excel = self.cliente_lookup.corregir(datos.cliente or '')
                     self.logger.debug(
-                        f"   Lookup: '{datos.cliente}' → '{nombre_excel}'"
+                        f"   Lookup ({self.cliente_lookup.total_clientes()} clientes): "
+                        f"'{datos.cliente}' → '{nombre_excel}'"
                     )
                     datos.cliente = nombre_excel  # None si no encontró match
+                elif self.cliente_lookup and self.cliente_lookup.total_clientes() == 0:
+                    self.logger.debug(
+                        "   ⚠️  Lookup sin clientes cargados (clientes.xlsx no encontrado) "
+                        "— usando nombre OCR directamente"
+                    )
 
                 campos = sum([bool(datos.fecha), bool(datos.numero), bool(datos.cliente)])
                 self.logger.debug(f"   [2/7] ✅ OCR+Extracción ({campos}/3 campos)")

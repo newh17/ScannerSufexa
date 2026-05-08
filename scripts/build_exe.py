@@ -302,6 +302,18 @@ coll = COLLECT(
             )
             print(f"   ✅ config.json copiado")
 
+        # Copiar lista de clientes (xlsx preferido, csv como fallback)
+        copiado_clientes = False
+        for nombre in ("clientes.xlsx", "clientes.csv"):
+            origen = self.project_root / nombre
+            if origen.exists():
+                shutil.copy(origen, exe_dir / nombre)
+                print(f"   ✅ {nombre} copiado junto al .exe")
+                copiado_clientes = True
+                break
+        if not copiado_clientes:
+            print(f"   ⚠️  clientes.xlsx no encontrado — cópialo manualmente junto al .exe")
+
     def crear_readme_distribucion(self, tesseract_incluido=False):
         """Crea README para la distribución."""
         print("\n📄 Creando README de distribución...")
