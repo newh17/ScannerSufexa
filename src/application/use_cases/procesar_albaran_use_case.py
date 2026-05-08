@@ -16,7 +16,7 @@ from domain.exceptions import (
     DatosInvalidosException,
     ClienteInvalidoException
 )
-from application.services import ExtractorDatosService
+from application.services import ExtractorDatosService, ClienteLookupService
 from infrastructure.filesystem import FileSystemService
 from infrastructure.logging import LoggerService
 
@@ -73,7 +73,8 @@ class ProcesarAlbaranUseCase:
         albaran_repo: IAlbaranRepository,
         cliente_repo: IClienteRepository,
         file_system: FileSystemService,
-        logger: LoggerService
+        logger: LoggerService,
+        cliente_lookup: Optional[ClienteLookupService] = None
     ):
         """
         Inicializa el caso de uso.
@@ -94,6 +95,7 @@ class ProcesarAlbaranUseCase:
         self.cliente_repo = cliente_repo
         self.file_system = file_system
         self.logger = logger
+        self.cliente_lookup = cliente_lookup
 
     def ejecutar(self, pdf_path: str) -> ResultadoProcesamiento:
         """
@@ -177,6 +179,16 @@ class ProcesarAlbaranUseCase:
 
                 datos.confianza = confianza
                 self.logger.log_ocr(pdf_path, 0, confianza)
+
+                # Corrección con lookup de clientes conocidos (clientes.csv)
+                if self.cliente_lookup and datos.cliente:
+                    nombre_corregido = self.cliente_lookup.corregir(datos.cliente)
+                    if nombre_corregido != datos.cliente:
+                        self.logger.debug(
+                            f"   Lookup: '{datos.cliente}' → '{nombre_corregido}'"
+                        )
+                        datos.cliente = nombre_corregido
+
                 campos = sum([bool(datos.fecha), bool(datos.numero), bool(datos.cliente)])
                 self.logger.debug(f"   [2/7] ✅ OCR+Extracción ({campos}/3 campos)")
 

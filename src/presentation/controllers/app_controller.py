@@ -17,7 +17,7 @@ from infrastructure.monitoring import WatchdogFileMonitor
 from infrastructure.filesystem import FileSystemService
 from infrastructure.logging import LoggerService
 from infrastructure.persistence.repositories import NullAlbaranRepository, NullClienteRepository
-from application.services import ExtractorDatosService
+from application.services import ExtractorDatosService, ClienteLookupService
 from application.use_cases import ProcesarAlbaranUseCase
 
 try:
@@ -232,12 +232,17 @@ class AppController:
         pdf_processor = PDFProcessor(dpi=300)
         ocr_service = TesseractOCRService(language='spa', config='--psm 3')
         extractor = ExtractorDatosService()
+        cliente_lookup = ClienteLookupService()
         file_system = FileSystemService(
             carpeta_salida_base=self._config["salida"],
             carpeta_errores=self._config["errores"],
         )
         albaran_repo = NullAlbaranRepository()
         cliente_repo = NullClienteRepository()
+
+        n = cliente_lookup.total_clientes()
+        if n:
+            self._logger.debug(f"   Lookup de clientes cargado: {n} nombres")
 
         self._use_case = ProcesarAlbaranUseCase(
             pdf_processor=pdf_processor,
@@ -247,6 +252,7 @@ class AppController:
             cliente_repo=cliente_repo,
             file_system=file_system,
             logger=self._logger,
+            cliente_lookup=cliente_lookup,
         )
 
     # ------------------------------------------------------------------
