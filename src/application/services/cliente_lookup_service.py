@@ -115,6 +115,8 @@ class ClienteLookupService:
         self._clientes_tokens = []
 
         if not ruta.exists():
+            import sys
+            print(f"[ClienteLookup] AVISO: no se encontró el archivo de clientes en: {ruta}", file=sys.stderr)
             return
         try:
             if ruta.suffix.lower() == '.xlsx':
@@ -158,13 +160,26 @@ class ClienteLookupService:
 
     @staticmethod
     def _ruta_por_defecto() -> Path:
-        bases = [
+        import sys
+        candidatos: list[Path] = []
+
+        # Cuando corre como .exe compilado con PyInstaller
+        if getattr(sys, 'frozen', False):
+            candidatos.append(Path(sys.executable).parent)
+
+        # Cuando corre desde código fuente
+        candidatos += [
             Path(__file__).parent.parent.parent.parent,
             Path(__file__).parent.parent.parent.parent.parent,
         ]
-        for base in bases:
+
+        for base in candidatos:
             for nombre in ("clientes.xlsx", "clientes.csv"):
                 ruta = base / nombre
                 if ruta.exists():
                     return ruta
-        return bases[0] / "clientes.csv"
+
+        # Fallback: junto al exe (el usuario debe copiarlo)
+        if getattr(sys, 'frozen', False):
+            return Path(sys.executable).parent / "clientes.xlsx"
+        return candidatos[-1] / "clientes.xlsx"
