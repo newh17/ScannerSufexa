@@ -124,46 +124,67 @@ class ProcesarAlbaranUseCase:
                     inicio
                 )
 
-            # PASO 2: Imagen → Texto (OCR)
+            # PASO 2 + 3: OCR con reintentos multi-variante
+            # Prueba hasta 6 preprocesados distintos fusionando los campos
+            # encontrados en cada intento (mejor valor por campo).
             try:
-                texto_ocr, confianza = self.ocr_service.extract_text_with_confidence(
-                    imagen_procesada
-                )
-                texto_normalizado = self.ocr_service.normalize_text(texto_ocr)
-                self.logger.log_ocr(pdf_path, len(texto_normalizado), confianza)
-                self.logger.debug(f"   [2/7] ✅ OCR (confianza: {confianza:.1f}%)")
+                from application.services.extractor_datos_service import DatosExtraidos
+                variantes = self.pdf_processor.get_image_variants(imagen)
+                datos = DatosExtraidos()
+                confianza = 0.0
 
-                # Si la confianza es muy baja, advertir
-                if confianza < 50:
-                    self.logger.warning(
-                        f"⚠️  Baja confianza OCR ({confianza:.1f}%) en {nombre_archivo}"
+                for i_var, variante in enumerate(variantes):
+                    try:
+                        texto_ocr, conf = self.ocr_service.extract_text_with_confidence(variante)
+                    except Exception:
+                        continue
+
+                    texto_norm = self.ocr_service.normalize_text(texto_ocr)
+                    candidato = self.extractor.extraer_datos(texto_norm)
+
+                    # Fusionar: cada campo se completa con el primer valor válido
+                    if datos.fecha is None and candidato.fecha is not None:
+                        datos.fecha = candidato.fecha
+                        confianza = max(confianza, conf)
+                    if datos.numero is None and candidato.numero is not None:
+                        datos.numero = candidato.numero
+                        confianza = max(confianza, conf)
+                    # Cliente: preferir siempre el que tenga sufijo de empresa
+                    if candidato.cliente is not None:
+                        from application.services.extractor_datos_service import ExtractorDatosService
+                        tiene_sufijo_nuevo = bool(
+                            ExtractorDatosService.SUFIJOS_EMPRESA.search(candidato.cliente)
+                        )
+                        tiene_sufijo_actual = bool(
+                            ExtractorDatosService.SUFIJOS_EMPRESA.search(datos.cliente)
+                        ) if datos.cliente else False
+
+                        if datos.cliente is None or (tiene_sufijo_nuevo and not tiene_sufijo_actual):
+                            datos.cliente = candidato.cliente
+
+                    self.logger.debug(
+                        f"   Variante {i_var}: fecha={datos.fecha} "
+                        f"num={datos.numero} cliente={bool(datos.cliente)}"
                     )
+
+                    # Solo salir cuando fecha+numero están y el cliente
+                    # tiene sufijo de empresa, o ya probamos todas las variantes
+                    cliente_confirmado = datos.cliente and bool(
+                        ExtractorDatosService.SUFIJOS_EMPRESA.search(datos.cliente)
+                    )
+                    if datos.fecha and datos.numero and cliente_confirmado:
+                        break
+
+                datos.confianza = confianza
+                self.logger.log_ocr(pdf_path, 0, confianza)
+                campos = sum([bool(datos.fecha), bool(datos.numero), bool(datos.cliente)])
+                self.logger.debug(f"   [2/7] ✅ OCR+Extracción ({campos}/3 campos)")
 
             except Exception as e:
                 return self._manejar_error(
                     pdf_path,
                     "Error_OCR",
                     f"Error en OCR: {e}",
-                    inicio
-                )
-
-            # PASO 3: Texto → Datos
-            try:
-                datos = self.extractor.extraer_datos(texto_normalizado)
-                self.logger.log_extraccion(
-                    pdf_path,
-                    datos.cliente,
-                    datos.fecha,
-                    datos.numero
-                )
-                self.logger.debug(
-                    f"   [3/7] ✅ Extracción (confianza: {datos.confianza:.1f}%)"
-                )
-            except Exception as e:
-                return self._manejar_error(
-                    pdf_path,
-                    "Error_extraccion",
-                    f"Error al extraer datos: {e}",
                     inicio
                 )
 

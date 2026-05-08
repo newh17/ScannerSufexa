@@ -230,7 +230,7 @@ class AppController:
             return
 
         pdf_processor = PDFProcessor(dpi=300)
-        ocr_service = TesseractOCRService(language='spa', config='--psm 6')
+        ocr_service = TesseractOCRService(language='spa', config='--psm 3')
         extractor = ExtractorDatosService()
         file_system = FileSystemService(
             carpeta_salida_base=self._config["salida"],

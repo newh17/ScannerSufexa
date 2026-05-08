@@ -4,7 +4,16 @@
       "Bash(python:*)",
       "Bash(python3:*)",
       "Bash(find:*)",
-      "Bash(zip:*)"
+      "Bash(zip:*)",
+      "Bash(pip install *)",
+      "Bash(pip3 install *)",
+      "Bash(.venv/bin/pip install *)",
+      "Bash(.venv/bin/python3 *)",
+      "Read(//opt/homebrew/Cellar/tesseract/5.5.1/share/tessdata/**)",
+      "Read(//usr/local/share/**)",
+      "Read(//opt/homebrew/**)",
+      "Bash(tesseract --version)",
+      "Bash(curl -L \"https://github.com/tesseract-ocr/tessdata/raw/main/spa.traineddata\" -o /opt/homebrew/share/tessdata/spa.traineddata)"
     ]
   }
 }

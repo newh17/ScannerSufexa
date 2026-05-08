@@ -132,34 +132,50 @@ class PDFProcessor:
             raise ValueError(f"Error al procesar el PDF: {str(e)}")
 
     def preprocess_image(self, image: Image.Image) -> Image.Image:
+        """Preprocesado estándar: escala de grises + contraste."""
+        from PIL import ImageEnhance
+
+        img_gray = image.convert('L')
+        img_contrast = ImageEnhance.Contrast(img_gray).enhance(1.5)
+        img_sharp = ImageEnhance.Sharpness(img_contrast).enhance(1.2)
+        return img_sharp
+
+    def get_image_variants(self, image: Image.Image) -> list:
         """
-        Preprocesa la imagen para mejorar el OCR.
+        Genera variantes de preprocesado ordenadas de menos a más agresivas.
 
-        Aplica:
-        - Conversión a escala de grises
-        - Aumento de contraste
-        - Reducción de ruido (opcional)
-
-        Args:
-            image: Imagen PIL original
+        Se usan como fallback cuando el preprocesado estándar no extrae
+        todos los campos del albarán (fecha, número, cliente).
 
         Returns:
-            Image.Image: Imagen procesada
+            List[Image.Image]: Lista de imágenes preprocesadas para probar.
         """
         from PIL import ImageEnhance
 
-        # Convertir a escala de grises
-        img_gray = image.convert('L')
+        gray = image.convert('L')
+        variantes = []
 
-        # Aumentar contraste (mejora reconocimiento de texto)
-        enhancer = ImageEnhance.Contrast(img_gray)
-        img_contrast = enhancer.enhance(1.5)  # Factor 1.5 = +50% contraste
+        # Variante 1: estándar (la que ya se usa primero en el pipeline)
+        variantes.append(ImageEnhance.Sharpness(
+            ImageEnhance.Contrast(gray).enhance(1.5)
+        ).enhance(1.2))
 
-        # Aumentar nitidez
-        enhancer = ImageEnhance.Sharpness(img_contrast)
-        img_sharp = enhancer.enhance(1.2)
+        # Variante 2: binarización suave (umbral bajo — captura tinta tenue)
+        variantes.append(gray.point(lambda x: 0 if x < 80 else 255, '1'))
 
-        return img_sharp
+        # Variante 3: binarización media
+        variantes.append(gray.point(lambda x: 0 if x < 100 else 255, '1'))
+
+        # Variante 4: binarización estándar
+        variantes.append(gray.point(lambda x: 0 if x < 128 else 255, '1'))
+
+        # Variante 5: contraste muy alto (rescata texto con poco contraste)
+        variantes.append(ImageEnhance.Contrast(gray).enhance(3.0))
+
+        # Variante 6: binarización alta (elimina ruido de fondo gris)
+        variantes.append(gray.point(lambda x: 0 if x < 140 else 255, '1'))
+
+        return variantes
 
     def save_image(self, image: Image.Image, output_path: str):
         """
