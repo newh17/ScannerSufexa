@@ -190,14 +190,14 @@ class ProcesarAlbaranUseCase:
                 datos.confianza = confianza
                 self.logger.log_ocr(pdf_path, 0, confianza)
 
-                # Corrección con lookup de clientes conocidos (clientes.csv)
-                if self.cliente_lookup and datos.cliente:
-                    nombre_corregido = self.cliente_lookup.corregir(datos.cliente)
-                    if nombre_corregido != datos.cliente:
-                        self.logger.debug(
-                            f"   Lookup: '{datos.cliente}' → '{nombre_corregido}'"
-                        )
-                        datos.cliente = nombre_corregido
+                # El nombre final SIEMPRE viene del Excel de clientes.
+                # Si no hay coincidencia suficiente → None → irá a errores.
+                if self.cliente_lookup:
+                    nombre_excel = self.cliente_lookup.corregir(datos.cliente or '')
+                    self.logger.debug(
+                        f"   Lookup: '{datos.cliente}' → '{nombre_excel}'"
+                    )
+                    datos.cliente = nombre_excel  # None si no encontró match
 
                 campos = sum([bool(datos.fecha), bool(datos.numero), bool(datos.cliente)])
                 self.logger.debug(f"   [2/7] ✅ OCR+Extracción ({campos}/3 campos)")
