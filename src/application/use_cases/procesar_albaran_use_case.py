@@ -4,6 +4,7 @@ Caso de uso: Procesar Albarán Completo.
 Orquesta todo el pipeline de procesamiento.
 """
 
+import re
 import time
 from pathlib import Path
 from typing import Optional
@@ -154,7 +155,8 @@ class ProcesarAlbaranUseCase:
                     if candidato.fecha is not None:
                         votos_fecha.append(candidato.fecha)
 
-                    # Cliente: preferir siempre el que tenga sufijo de empresa
+                    # Cliente: preferir el que tenga sufijo; si ambos lo tienen,
+                    # el que tenga más palabras reales (descarta basura OCR tipo "E/S.C. ≥ NLE J.")
                     if candidato.cliente is not None:
                         tiene_sufijo_nuevo = bool(
                             ExtractorDatosService.SUFIJOS_EMPRESA.search(candidato.cliente)
@@ -163,7 +165,15 @@ class ProcesarAlbaranUseCase:
                             ExtractorDatosService.SUFIJOS_EMPRESA.search(datos.cliente)
                         ) if datos.cliente else False
 
-                        if datos.cliente is None or (tiene_sufijo_nuevo and not tiene_sufijo_actual):
+                        palabras_nuevo = len(re.findall(r'[A-Za-záéíóúÁÉÍÓÚñÑ]{3,}', candidato.cliente))
+                        palabras_actual = len(re.findall(r'[A-Za-záéíóúÁÉÍÓÚñÑ]{3,}', datos.cliente)) if datos.cliente else 0
+
+                        upgrade = (
+                            datos.cliente is None
+                            or (tiene_sufijo_nuevo and not tiene_sufijo_actual)
+                            or (tiene_sufijo_nuevo and tiene_sufijo_actual and palabras_nuevo > palabras_actual)
+                        )
+                        if upgrade:
                             datos.cliente = candidato.cliente
 
                     self.logger.debug(

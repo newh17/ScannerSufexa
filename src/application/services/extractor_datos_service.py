@@ -50,16 +50,18 @@ class ExtractorDatosService:
         # \b al inicio ancla al inicio de palabra.
         # (?!\w) en lugar de \b al final: evita fallar cuando el sufijo
         # acaba en "." (punto = carácter no-word, \b no encuentra frontera).
-        r'\bS\.L\.U?\.?(?!\w)'              # S.L. / S.L.U.
-        r'|\bS\.A\.?(?!\w)'               # S.A.
-        r'|\bS\.C\.?(?!\w)'               # S.C. (Sociedad Civil)
-        r'|\bC\.B\.?(?!\w)'               # C.B. (Comunidad de Bienes)
-        r'|\bS\.COOP\.?(?!\w)'            # S.COOP.
+        r'\bS\.L\.U?\.?(?!\w)'                   # S.L. / S.L.U.
+        r'|\bS\.A\.?(?!\w)'                    # S.A.
+        r'|\bS\.C\.?(?!\w)'                    # S.C. (Sociedad Civil)
+        r'|\bC\.B\.?(?!\w)'                    # C.B. (Comunidad de Bienes)
+        r'|\bS\.COOP\.(?:VAL\.?|V\.?)(?!\w)'  # S.COOP.VAL. / S.COOP.V.
+        r'|\bS\.COOP\.?(?!\w)'                 # S.COOP. sola
+        r'|\bCOOP\.\s*V\.?(?!\w)'             # COOP. V. / COOP.V.
         r'|\bCOOP\.(?:VAL\.)?LTDA\.?(?!\w)'  # COOP.VAL.LTDA. / COOP.LTDA.
-        r'|\bLTDA\.?(?!\w)'               # LTDA. sola
-        r'|\bCOOP\.?(?!\w)'               # COOP. sola
-        r'|\bS\.C\.P\.?(?!\w)'            # S.C.P. (Sociedad Civil Profesional)
-        r'|\bS\.L\.L\.?(?!\w)',           # S.L.L. (Soc. Limitada Laboral)
+        r'|\bLTDA\.?(?!\w)'                    # LTDA. sola
+        r'|\bCOOP\.?(?!\w)'                    # COOP. sola
+        r'|\bS\.C\.P\.?(?!\w)'                 # S.C.P. (Sociedad Civil Profesional)
+        r'|\bS\.L\.L\.?(?!\w)',                # S.L.L. (Soc. Limitada Laboral)
         re.IGNORECASE
     )
 
@@ -278,7 +280,10 @@ class ExtractorDatosService:
                 pre_sufijo
             )
             if m:
-                nombre = m.group(1).rstrip(', ') + ', ' + sufijo_str
+                parte = m.group(1).rstrip(', ')
+                # Quitar letra suelta al inicio (basura OCR tipo "S FUSTERIA…")
+                parte = re.sub(r'^[A-ZÁÉÍÓÚÀÈÑ] (?=[A-ZÁÉÍÓÚÀÈÑ]{2})', '', parte)
+                nombre = parte + ', ' + sufijo_str
             else:
                 # Fallback: primer par de mayúsculas consecutivas
                 m2 = re.search(r'[A-ZÁÉÍÓÚÀÈÑ]{2}', pre_sufijo)

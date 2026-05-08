@@ -39,7 +39,8 @@ class ClienteLookupService:
         VALENCIA MUEBLES A MEDIDA, S.L.
     """
 
-    UMBRAL_SIMILITUD = 0.82  # 82 % de similitud mínima para aceptar la corrección
+    UMBRAL_SEQ = 0.82    # similitud global mínima (SequenceMatcher)
+    UMBRAL_TOKEN = 0.65  # fracción mínima de palabras del CSV que aparecen en el OCR
 
     def __init__(self, ruta_csv: Optional[str] = None):
         self._clientes: list[str] = []
@@ -59,18 +60,33 @@ class ClienteLookupService:
             return nombre_ocr
 
         nombre_norm = _normalizar(nombre_ocr)
-        mejor_score = 0.0
-        mejor_nombre = nombre_ocr
+        ocr_tokens = set(t for t in nombre_norm.split() if len(t) >= 3)
+
+        mejor_seq = 0.0
+        mejor_token = 0.0
+        nombre_por_seq = nombre_ocr
+        nombre_por_token = nombre_ocr
 
         for oficial, oficial_norm in zip(self._clientes, self._clientes_norm):
-            score = SequenceMatcher(None, nombre_norm, oficial_norm).ratio()
-            if score > mejor_score:
-                mejor_score = score
-                mejor_nombre = oficial
+            seq = SequenceMatcher(None, nombre_norm, oficial_norm).ratio()
+            if seq > mejor_seq:
+                mejor_seq = seq
+                nombre_por_seq = oficial
 
-        if mejor_score >= self.UMBRAL_SIMILITUD:
-            return mejor_nombre
+            target_tokens = set(t for t in oficial_norm.split() if len(t) >= 3)
+            if target_tokens and ocr_tokens:
+                common = len(ocr_tokens & target_tokens)
+                # Denominador = el más pequeño de los dos conjuntos:
+                # así "INNOVA CUINES" cubre 2/3 de "INNOVA CUINES I FUSTES SLL" → 0.67
+                token = common / min(len(ocr_tokens), len(target_tokens))
+                if token > mejor_token:
+                    mejor_token = token
+                    nombre_por_token = oficial
 
+        if mejor_seq >= self.UMBRAL_SEQ:
+            return nombre_por_seq
+        if mejor_token >= self.UMBRAL_TOKEN:
+            return nombre_por_token
         return nombre_ocr
 
     def recargar(self):
