@@ -128,10 +128,13 @@ class ProcesarAlbaranUseCase:
             # Prueba hasta 6 preprocesados distintos fusionando los campos
             # encontrados en cada intento (mejor valor por campo).
             try:
-                from application.services.extractor_datos_service import DatosExtraidos
+                from collections import Counter
+                from application.services.extractor_datos_service import DatosExtraidos, ExtractorDatosService
                 variantes = self.pdf_processor.get_image_variants(imagen)
                 datos = DatosExtraidos()
                 confianza = 0.0
+                votos_numero = []   # todos los candidatos de número para votación
+                votos_fecha = []    # ídem para fecha
 
                 for i_var, variante in enumerate(variantes):
                     try:
@@ -141,17 +144,16 @@ class ProcesarAlbaranUseCase:
 
                     texto_norm = self.ocr_service.normalize_text(texto_ocr)
                     candidato = self.extractor.extraer_datos(texto_norm)
+                    confianza = max(confianza, conf)
 
-                    # Fusionar: cada campo se completa con el primer valor válido
-                    if datos.fecha is None and candidato.fecha is not None:
-                        datos.fecha = candidato.fecha
-                        confianza = max(confianza, conf)
-                    if datos.numero is None and candidato.numero is not None:
-                        datos.numero = candidato.numero
-                        confianza = max(confianza, conf)
+                    # Acumular votos de número y fecha (todas las variantes)
+                    if candidato.numero is not None:
+                        votos_numero.append(candidato.numero)
+                    if candidato.fecha is not None:
+                        votos_fecha.append(candidato.fecha)
+
                     # Cliente: preferir siempre el que tenga sufijo de empresa
                     if candidato.cliente is not None:
-                        from application.services.extractor_datos_service import ExtractorDatosService
                         tiene_sufijo_nuevo = bool(
                             ExtractorDatosService.SUFIJOS_EMPRESA.search(candidato.cliente)
                         )
@@ -163,17 +165,15 @@ class ProcesarAlbaranUseCase:
                             datos.cliente = candidato.cliente
 
                     self.logger.debug(
-                        f"   Variante {i_var}: fecha={datos.fecha} "
-                        f"num={datos.numero} cliente={bool(datos.cliente)}"
+                        f"   Variante {i_var}: num_cand={candidato.numero} "
+                        f"fecha_cand={candidato.fecha} cliente={bool(datos.cliente)}"
                     )
 
-                    # Solo salir cuando fecha+numero están y el cliente
-                    # tiene sufijo de empresa, o ya probamos todas las variantes
-                    cliente_confirmado = datos.cliente and bool(
-                        ExtractorDatosService.SUFIJOS_EMPRESA.search(datos.cliente)
-                    )
-                    if datos.fecha and datos.numero and cliente_confirmado:
-                        break
+                # Número y fecha por mayoría de votos entre todas las variantes
+                if votos_numero:
+                    datos.numero = Counter(votos_numero).most_common(1)[0][0]
+                if votos_fecha:
+                    datos.fecha = Counter(votos_fecha).most_common(1)[0][0]
 
                 datos.confianza = confianza
                 self.logger.log_ocr(pdf_path, 0, confianza)

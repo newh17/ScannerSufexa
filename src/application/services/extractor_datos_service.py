@@ -41,9 +41,9 @@ class ExtractorDatosService:
         r'\b(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{3,4})\b'
     )
 
-    # Número de albarán: 5 o 6 dígitos que NO sean parte de una fecha
+    # Número de albarán: exactamente 5 dígitos que NO sean parte de un número más largo
     RE_NUMERO_ALBARA = re.compile(
-        r'(?<![/\d])(\d{5,6})(?![/\d])'
+        r'(?<![/\d])(\d{5})(?![/\d])'
     )
 
     SUFIJOS_EMPRESA = re.compile(
@@ -168,7 +168,7 @@ class ExtractorDatosService:
         - Números muy pequeños o muy grandes
         Los albaranes de Sufexa están en el rango 60000-99999.
         """
-        return 60000 <= val <= 999999
+        return 60000 <= val <= 99999
 
     # ------------------------------------------------------------------
     # Cliente
