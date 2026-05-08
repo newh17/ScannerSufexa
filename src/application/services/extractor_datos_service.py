@@ -210,7 +210,9 @@ class ExtractorDatosService:
             if len(linea) < 4 or len(linea) > 80:
                 continue
 
-            if RE_EXCLUIR.search(linea):
+            # RE_EXCLUIR no se aplica si la línea tiene sufijo de empresa:
+            # evita descartar nombres como "VALENCIA MUEBLES A MEDIDA, S.L."
+            if RE_EXCLUIR.search(linea) and not self.SUFIJOS_EMPRESA.search(linea):
                 continue
 
             # Ignorar líneas de solo números/símbolos/separadores
@@ -269,8 +271,12 @@ class ExtractorDatosService:
             # Con sufijo: extraer nombre real + sufijo exacto, descartar basura OCR al inicio/final.
             pre_sufijo = nombre[:sufijo_m.start()]
             sufijo_str = nombre[sufijo_m.start():sufijo_m.end()]  # solo el sufijo (sin trailing)
-            # Buscar la última secuencia de 2+ mayúsculas consecutivas antes del sufijo
-            m = re.search(r'([A-ZÁÉÍÓÚÀÈÑ]{2}[A-ZÁÉÍÓÚÀÈÑ\s\.]*)\s*[,\s]*$', pre_sufijo)
+            # Última secuencia que empiece y acabe en mayúscula, permite dígitos entre medias
+            # (ej: "BC3 COCINAS" o "FUSTERIA ESTIL NOU MIRAVET")
+            m = re.search(
+                r'([A-ZÁÉÍÓÚÀÈÑ][A-ZÁÉÍÓÚÀÈÑ\d\s\.]*[A-ZÁÉÍÓÚÀÈÑ])\s*[,\s]*$',
+                pre_sufijo
+            )
             if m:
                 nombre = m.group(1).rstrip(', ') + ', ' + sufijo_str
             else:
@@ -288,7 +294,8 @@ class ExtractorDatosService:
         nombre = re.sub(r'\s+\d{8,}$', '', nombre)
         nombre = re.sub(r'[\s\-—]+$', '', nombre)
 
-        return nombre.strip()
+        # Normalizar a mayúsculas (el OCR a veces produce Title Case en lugar de CAPS)
+        return nombre.strip().upper()
 
     # ------------------------------------------------------------------
     # Helpers internos
