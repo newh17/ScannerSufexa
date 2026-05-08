@@ -116,11 +116,17 @@ class ClienteLookupService:
 
         if not ruta.exists():
             import sys
-            print(f"[ClienteLookup] AVISO: no se encontró el archivo de clientes en: {ruta}", file=sys.stderr)
+            print(f"[ClienteLookup] AVISO: no se encontró: {ruta}", file=sys.stderr)
             return
+
         try:
             if ruta.suffix.lower() == '.xlsx':
                 self._cargar_xlsx(ruta)
+                if not self._clientes:
+                    # openpyxl no disponible o xlsx corrupto — usar csv del mismo directorio
+                    ruta_csv = ruta.with_suffix('.csv')
+                    if ruta_csv.exists():
+                        self._cargar_txt(ruta_csv)
             else:
                 self._cargar_txt(ruta)
         except Exception:
