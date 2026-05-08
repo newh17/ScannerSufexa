@@ -185,6 +185,12 @@ a = Analysis(
         'infrastructure.persistence.models',
         'infrastructure.monitoring',
         'infrastructure.logging',
+        'openpyxl',
+        'openpyxl.styles',
+        'openpyxl.reader.excel',
+        'openpyxl.workbook',
+        'openpyxl.worksheet',
+        'et_xmlfile',
     ],
     hookspath=[],
     hooksconfig={{}},
@@ -302,17 +308,14 @@ coll = COLLECT(
             )
             print(f"   ✅ config.json copiado")
 
-        # Copiar lista de clientes (xlsx preferido, csv como fallback)
-        copiado_clientes = False
+        # Copiar lista de clientes (xlsx Y csv — doble seguro)
         for nombre in ("clientes.xlsx", "clientes.csv"):
             origen = self.project_root / nombre
             if origen.exists():
                 shutil.copy(origen, exe_dir / nombre)
                 print(f"   ✅ {nombre} copiado junto al .exe")
-                copiado_clientes = True
-                break
-        if not copiado_clientes:
-            print(f"   ⚠️  clientes.xlsx no encontrado — cópialo manualmente junto al .exe")
+            else:
+                print(f"   ⚠️  {nombre} no encontrado en la raíz del proyecto")
 
     def crear_readme_distribucion(self, tesseract_incluido=False):
         """Crea README para la distribución."""
