@@ -89,6 +89,13 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(splitter_main)
 
+        # Pie de página
+        from PySide6.QtWidgets import QLabel
+        footer = QLabel("Desarrollado por Carles Vilar")
+        footer.setAlignment(Qt.AlignCenter)
+        footer.setStyleSheet("color: #888888; font-size: 9pt; padding: 4px;")
+        main_layout.addWidget(footer)
+
         # Aplicar estilos
         self.setStyleSheet("""
             QMainWindow {
@@ -203,9 +210,10 @@ class MainWindow(QMainWindow):
             "<li>Organización automática por cliente</li>"
             "<li>Prevención de duplicados</li>"
             "</ul>"
-            "<p><b>Arquitectura:</b> Domain-Driven Design (DDD)</p>"
-            "<p><b>Tecnologías:</b> Python, PySide6, SQLite, Tesseract</p>"
+            "<p><b>Tecnologías:</b> Python, PySide6, Tesseract</p>"
             "<p>© 2026 Scanner Sufexa</p>"
+            "<br>"
+            "<p><b>Desarrollado por Carles Vilar</b></p>"
         )
 
     # Métodos públicos para actualizar la UI
