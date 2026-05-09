@@ -21,7 +21,9 @@ except ImportError:
 
 def _normalizar(nombre: str) -> str:
     """Elimina puntuación y pasa a mayúsculas para comparar."""
-    return re.sub(r'[^A-Z0-9\s]', '', nombre.upper()).strip()
+    nombre = nombre.upper()
+    nombre = re.sub(r'[-]', ' ', nombre)   # guion → espacio (evita fusionar palabras)
+    return re.sub(r'[^A-Z0-9\s]', '', nombre).strip()
 
 
 def _tokens(nombre_norm: str) -> set:
