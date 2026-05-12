@@ -1,14 +1,13 @@
 """
-Servicio de lookup de clientes conocidos.
+Servicio de lookup de clientes por número de cliente.
 
 Lee clientes.xlsx (o clientes.csv) junto al .exe.
-El nombre del cliente es SIEMPRE el del archivo — nunca el texto crudo del OCR.
-Si no se encuentra una coincidencia suficiente, devuelve None y el albarán
-va a la carpeta de errores para revisión manual.
+El CSV/Excel debe tener dos columnas: numero_cliente, nombre_cliente.
+El nombre SIEMPRE proviene del archivo — nunca del OCR.
 """
 
 import re
-from difflib import SequenceMatcher
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -19,82 +18,59 @@ except ImportError:
     _OPENPYXL_OK = False
 
 
-def _normalizar(nombre: str) -> str:
-    """Elimina puntuación y pasa a mayúsculas para comparar."""
-    nombre = nombre.upper()
-    nombre = re.sub(r'[-]', ' ', nombre)   # guion → espacio (evita fusionar palabras)
-    return re.sub(r'[^A-Z0-9\s]', '', nombre).strip()
-
-
-def _tokens(nombre_norm: str) -> set:
-    """Palabras significativas (3+ caracteres) del nombre normalizado."""
-    return set(t for t in nombre_norm.split() if len(t) >= 3)
+def _normalizar_numero(numero: str) -> str:
+    """Elimina espacios y caracteres no alfanuméricos para comparar."""
+    return re.sub(r'[^0-9A-Za-z]', '', numero).strip()
 
 
 class ClienteLookupService:
     """
-    Dado el texto OCR extraído, devuelve el nombre EXACTO del Excel.
+    Dado un número de cliente extraído del OCR, devuelve el nombre EXACTO del Excel/CSV.
 
-    Estrategia de puntuación (toma el máximo de las dos):
-      - seq_score:   similitud global de cadena (SequenceMatcher)
-      - token_score: fracción de palabras del OCR que coinciden con el
-                     candidato (denominador = mínimo de ambos conjuntos)
+    El CSV/Excel debe tener dos columnas:
+      - numero_cliente  (ej. 43001234)
+      - nombre_cliente  (ej. METALCRISMAR, S.L.)
 
-    Si el mejor score supera UMBRAL → devuelve el nombre del Excel.
-    Si no → devuelve None (el albarán irá a errores para revisión manual).
+    La búsqueda es exacta tras normalización (elimina espacios y caracteres no alfanuméricos).
+    Si el número no está en el archivo → devuelve None.
     """
 
-    UMBRAL = 0.45   # por debajo de esto el OCR falló demasiado → error manual
-
     def __init__(self, ruta_csv: Optional[str] = None):
-        self._clientes: list[str] = []
-        self._clientes_norm: list[str] = []
-        self._clientes_tokens: list[set] = []
+        self._tabla: dict[str, str] = {}   # numero_normalizado → nombre_oficial
+        self._cargado: bool = False
+        self._error_carga: Optional[str] = None
 
         ruta = Path(ruta_csv) if ruta_csv else self._ruta_por_defecto()
         self._cargar(ruta)
 
     # ------------------------------------------------------------------
 
-    def corregir(self, nombre_ocr: str) -> Optional[str]:
+    def buscar_por_numero(self, numero_cliente: str) -> Optional[str]:
         """
-        Devuelve el nombre oficial del Excel más parecido al texto OCR,
-        o None si la coincidencia es demasiado débil (→ error manual).
+        Devuelve el nombre oficial del cliente, o None si no se encontró.
+
+        Args:
+            numero_cliente: Número extraído del OCR (string)
+
+        Returns:
+            Nombre exacto del archivo, o None si no hay coincidencia
         """
-        if not nombre_ocr or not self._clientes:
+        if not numero_cliente or not self._tabla:
             return None
 
-        nombre_norm = _normalizar(nombre_ocr)
-        ocr_tok = _tokens(nombre_norm)
+        clave = _normalizar_numero(numero_cliente)
+        return self._tabla.get(clave)
 
-        mejor_score = 0.0
-        mejor_nombre = None
-
-        for oficial, oficial_norm, oficial_tok in zip(
-            self._clientes, self._clientes_norm, self._clientes_tokens
-        ):
-            # Similitud global de cadena
-            seq = SequenceMatcher(None, nombre_norm, oficial_norm).ratio()
-
-            # Solapamiento de tokens (denominador = el conjunto más pequeño)
-            if ocr_tok and oficial_tok:
-                comunes = len(ocr_tok & oficial_tok)
-                token = comunes / min(len(ocr_tok), len(oficial_tok))
-            else:
-                token = 0.0
-
-            score = max(seq, token)
-            if score > mejor_score:
-                mejor_score = score
-                mejor_nombre = oficial
-
-        if mejor_score >= self.UMBRAL:
-            return mejor_nombre
-
-        return None   # OCR demasiado garbled → irá a errores
+    def is_loaded(self) -> bool:
+        """Indica si el archivo se cargó con al menos un cliente."""
+        return self._cargado and len(self._tabla) > 0
 
     def total_clientes(self) -> int:
-        return len(self._clientes)
+        return len(self._tabla)
+
+    def error_carga(self) -> Optional[str]:
+        """Mensaje de error si la carga falló, o None si fue bien."""
+        return self._error_carga
 
     def recargar(self):
         ruta = self._ruta_por_defecto()
@@ -102,80 +78,124 @@ class ClienteLookupService:
 
     # ------------------------------------------------------------------
 
-    def _agregar(self, nombre: str):
-        nombre = nombre.strip()
-        if not nombre:
-            return
-        norm = _normalizar(nombre)
-        self._clientes.append(nombre)
-        self._clientes_norm.append(norm)
-        self._clientes_tokens.append(_tokens(norm))
-
     def _cargar(self, ruta: Path):
-        self._clientes = []
-        self._clientes_norm = []
-        self._clientes_tokens = []
+        self._tabla = {}
+        self._cargado = False
+        self._error_carga = None
 
         if not ruta.exists():
-            import sys
-            print(f"[ClienteLookup] AVISO: no se encontró: {ruta}", file=sys.stderr)
+            self._error_carga = f"Archivo de clientes no encontrado: {ruta}"
+            print(f"[ClienteLookup] AVISO: {self._error_carga}", file=sys.stderr)
             return
 
         try:
             if ruta.suffix.lower() == '.xlsx':
                 self._cargar_xlsx(ruta)
-                if not self._clientes:
-                    # openpyxl no disponible o xlsx corrupto — usar csv del mismo directorio
+                if not self._tabla and _OPENPYXL_OK:
                     ruta_csv = ruta.with_suffix('.csv')
                     if ruta_csv.exists():
-                        self._cargar_txt(ruta_csv)
+                        self._cargar_csv(ruta_csv)
+                elif not self._tabla and not _OPENPYXL_OK:
+                    ruta_csv = ruta.with_suffix('.csv')
+                    if ruta_csv.exists():
+                        self._cargar_csv(ruta_csv)
             else:
-                self._cargar_txt(ruta)
-        except Exception:
-            pass
+                self._cargar_csv(ruta)
 
-    def _cargar_txt(self, ruta: Path):
+            if self._tabla:
+                self._cargado = True
+                print(
+                    f"[ClienteLookup] {len(self._tabla)} clientes cargados desde {ruta.name}",
+                    file=sys.stderr
+                )
+            else:
+                self._error_carga = f"El archivo {ruta.name} no contiene datos válidos"
+
+        except Exception as e:
+            self._error_carga = f"Error al leer {ruta.name}: {e}"
+            print(f"[ClienteLookup] ERROR: {self._error_carga}", file=sys.stderr)
+
+    def _cargar_csv(self, ruta: Path):
+        """
+        Lee un CSV con dos columnas: numero_cliente, nombre_cliente.
+        La primera línea puede ser cabecera (se detecta automáticamente).
+        Separador: coma o punto y coma.
+        """
         with open(ruta, encoding='utf-8-sig') as f:
             for i, linea in enumerate(f):
-                nombre = linea.strip()
-                if not nombre:
+                linea = linea.strip()
+                if not linea:
                     continue
-                if i == 0 and nombre.lower() in ('nombre', 'cliente', 'name'):
+
+                # Detectar separador
+                if ';' in linea:
+                    partes = linea.split(';', 1)
+                else:
+                    partes = linea.split(',', 1)
+
+                if len(partes) < 2:
                     continue
-                self._agregar(nombre)
+
+                numero_raw = partes[0].strip()
+                nombre_raw = partes[1].strip()
+
+                # Saltar cabecera
+                if i == 0 and numero_raw.lower() in ('numero_cliente', 'num_cliente', 'numero', 'client', 'id'):
+                    continue
+
+                numero_norm = _normalizar_numero(numero_raw)
+                if numero_norm and nombre_raw:
+                    self._tabla[numero_norm] = nombre_raw
 
     def _cargar_xlsx(self, ruta: Path):
         if not _OPENPYXL_OK:
             return
+
         wb = openpyxl.load_workbook(ruta, read_only=True, data_only=True)
         ws = wb.active
-        nombre_col = None
+
+        col_numero = 0
+        col_nombre = 1
+
         for i, row in enumerate(ws.iter_rows(values_only=True)):
+            if not row:
+                continue
+
             if i == 0:
+                # Detectar columnas por cabecera
                 for j, cel in enumerate(row):
-                    if cel and str(cel).strip().lower() in ('nombre', 'cliente', 'name'):
-                        nombre_col = j
-                        break
-                if nombre_col is None:
-                    nombre_col = 0
-                    if row[nombre_col]:
-                        self._agregar(str(row[nombre_col]))
+                    if cel is None:
+                        continue
+                    cel_str = str(cel).strip().lower()
+                    if cel_str in ('numero_cliente', 'num_cliente', 'numero', 'client', 'id'):
+                        col_numero = j
+                    elif cel_str in ('nombre_cliente', 'nombre', 'name', 'cliente'):
+                        col_nombre = j
+                # Si la primera fila parece cabecera, saltar
+                primer_cel = str(row[0]).strip().lower() if row[0] else ''
+                if primer_cel in ('numero_cliente', 'num_cliente', 'numero', 'client', 'id'):
+                    continue
+                # Si no hay cabecera, procesar la primera fila como dato
+
+            try:
+                numero_raw = str(row[col_numero]).strip() if row[col_numero] is not None else ''
+                nombre_raw = str(row[col_nombre]).strip() if col_nombre < len(row) and row[col_nombre] is not None else ''
+            except (IndexError, TypeError):
                 continue
-            if not row or row[nombre_col] is None:
-                continue
-            self._agregar(str(row[nombre_col]))
+
+            numero_norm = _normalizar_numero(numero_raw)
+            if numero_norm and nombre_raw:
+                self._tabla[numero_norm] = nombre_raw
+
         wb.close()
 
     @staticmethod
     def _ruta_por_defecto() -> Path:
-        import sys
         candidatos: list[Path] = []
 
-        # Cuando corre como .exe compilado con PyInstaller
         if getattr(sys, 'frozen', False):
             candidatos.append(Path(sys.executable).parent)
 
-        # Cuando corre desde código fuente
         candidatos += [
             Path(__file__).parent.parent.parent.parent,
             Path(__file__).parent.parent.parent.parent.parent,
@@ -187,7 +207,6 @@ class ClienteLookupService:
                 if ruta.exists():
                     return ruta
 
-        # Fallback: junto al exe (el usuario debe copiarlo)
         if getattr(sys, 'frozen', False):
             return Path(sys.executable).parent / "clientes.xlsx"
         return candidatos[-1] / "clientes.xlsx"

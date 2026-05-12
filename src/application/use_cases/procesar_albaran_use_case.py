@@ -4,10 +4,10 @@ Caso de uso: Procesar Albarán Completo.
 Orquesta todo el pipeline de procesamiento.
 """
 
-import re
 import time
 from pathlib import Path
 from typing import Optional
+from collections import Counter
 
 from domain.entities import Albaran, Cliente
 from domain.value_objects import FechaAlbaran, NumeroAlbaran
@@ -18,23 +18,18 @@ from domain.exceptions import (
     ClienteInvalidoException
 )
 from application.services import ExtractorDatosService, ClienteLookupService
+from application.services.extractor_datos_service import DatosExtraidos
 from infrastructure.filesystem import FileSystemService
 from infrastructure.logging import LoggerService
 
-# Imports opcionales de OCR (pueden no estar disponibles)
 try:
     from infrastructure.ocr import TesseractOCRService, PDFProcessor
 except ImportError:
-    # Permitir que el módulo se importe sin OCR
     TesseractOCRService = None
     PDFProcessor = None
 
 
 class ResultadoProcesamiento:
-    """
-    DTO que representa el resultado del procesamiento.
-    """
-
     def __init__(
         self,
         exito: bool,
@@ -52,18 +47,15 @@ class ResultadoProcesamiento:
 
 class ProcesarAlbaranUseCase:
     """
-    Caso de uso principal: Procesar un albarán de principio a fin.
-
     Pipeline:
-    1. PDF → Imagen (PDFProcessor)
-    2. Imagen → Texto (TesseractOCRService)
-    3. Texto → Datos (ExtractorDatosService)
-    4. Datos → Entidades (Domain)
-    5. Validación de duplicados
-    6. Persistencia (Repositories)
-    7. Movimiento de archivo (FileSystemService)
-
-    Maneja todos los errores posibles en cada paso.
+    1. PDF → Imagen
+    2. Imagen → Texto (OCR, 6 variantes con votación)
+    3. Texto → Datos (numero_cliente, fecha, numero_albaran)
+    4. numero_cliente → nombre exacto (CSV lookup)
+    5. Validación de datos
+    6. Verificación de duplicados
+    7. Guardado en BD
+    8. Movimiento de archivo
     """
 
     def __init__(
@@ -77,18 +69,6 @@ class ProcesarAlbaranUseCase:
         logger: LoggerService,
         cliente_lookup: Optional[ClienteLookupService] = None
     ):
-        """
-        Inicializa el caso de uso.
-
-        Args:
-            pdf_processor: Procesador de PDF a imagen
-            ocr_service: Servicio de OCR
-            extractor: Extractor de datos
-            albaran_repo: Repositorio de albaranes
-            cliente_repo: Repositorio de clientes
-            file_system: Servicio de sistema de archivos
-            logger: Servicio de logging
-        """
         self.pdf_processor = pdf_processor
         self.ocr_service = ocr_service
         self.extractor = extractor
@@ -99,15 +79,6 @@ class ProcesarAlbaranUseCase:
         self.cliente_lookup = cliente_lookup
 
     def ejecutar(self, pdf_path: str) -> ResultadoProcesamiento:
-        """
-        Ejecuta el procesamiento completo de un albarán.
-
-        Args:
-            pdf_path: Ruta al archivo PDF
-
-        Returns:
-            ResultadoProcesamiento: Resultado del procesamiento
-        """
         inicio = time.time()
         nombre_archivo = Path(pdf_path).name
 
@@ -121,23 +92,18 @@ class ProcesarAlbaranUseCase:
                 self.logger.debug(f"   [1/7] ✅ PDF → Imagen")
             except Exception as e:
                 return self._manejar_error(
-                    pdf_path,
-                    "Error_PDF",
-                    f"No se pudo procesar el PDF: {e}",
-                    inicio
+                    pdf_path, "Error_PDF",
+                    f"No se pudo procesar el PDF: {e}", inicio
                 )
 
-            # PASO 2 + 3: OCR con reintentos multi-variante
-            # Prueba hasta 6 preprocesados distintos fusionando los campos
-            # encontrados en cada intento (mejor valor por campo).
+            # PASO 2+3: OCR multi-variante con votación por campo
             try:
-                from collections import Counter
-                from application.services.extractor_datos_service import DatosExtraidos, ExtractorDatosService
                 variantes = self.pdf_processor.get_image_variants(imagen)
                 datos = DatosExtraidos()
                 confianza = 0.0
-                votos_numero = []   # todos los candidatos de número para votación
-                votos_fecha = []    # ídem para fecha
+                votos_numero = []
+                votos_fecha = []
+                votos_num_cliente = []
 
                 for i_var, variante in enumerate(variantes):
                     try:
@@ -149,85 +115,98 @@ class ProcesarAlbaranUseCase:
                     candidato = self.extractor.extraer_datos(texto_norm)
                     confianza = max(confianza, conf)
 
-                    # Acumular votos de número y fecha (todas las variantes)
                     if candidato.numero is not None:
                         votos_numero.append(candidato.numero)
                     if candidato.fecha is not None:
                         votos_fecha.append(candidato.fecha)
-
-                    # Cliente: preferir el que tenga sufijo; si ambos lo tienen,
-                    # el que tenga más palabras reales (descarta basura OCR tipo "E/S.C. ≥ NLE J.")
-                    if candidato.cliente is not None:
-                        tiene_sufijo_nuevo = bool(
-                            ExtractorDatosService.SUFIJOS_EMPRESA.search(candidato.cliente)
-                        )
-                        tiene_sufijo_actual = bool(
-                            ExtractorDatosService.SUFIJOS_EMPRESA.search(datos.cliente)
-                        ) if datos.cliente else False
-
-                        palabras_nuevo = len(re.findall(r'[A-Za-záéíóúÁÉÍÓÚñÑ]{3,}', candidato.cliente))
-                        palabras_actual = len(re.findall(r'[A-Za-záéíóúÁÉÍÓÚñÑ]{3,}', datos.cliente)) if datos.cliente else 0
-
-                        upgrade = (
-                            datos.cliente is None
-                            or (tiene_sufijo_nuevo and not tiene_sufijo_actual)
-                            or (tiene_sufijo_nuevo and tiene_sufijo_actual and palabras_nuevo > palabras_actual)
-                        )
-                        if upgrade:
-                            datos.cliente = candidato.cliente
+                    if candidato.numero_cliente is not None:
+                        votos_num_cliente.append(candidato.numero_cliente)
 
                     self.logger.debug(
-                        f"   Variante {i_var}: num_cand={candidato.numero} "
-                        f"fecha_cand={candidato.fecha} cliente={bool(datos.cliente)}"
+                        f"   Variante {i_var}: num={candidato.numero} "
+                        f"fecha={candidato.fecha} num_cliente={candidato.numero_cliente}"
                     )
 
-                # Número y fecha por mayoría de votos entre todas las variantes
+                # Pasada adicional: OCR dedicado sobre la zona inferior-derecha
+                # donde Sufexa imprime el número de cliente. Se usa PSM 7
+                # (línea única) y crops ampliados 3x para leer dígitos
+                # pegados al borde del recuadro.
+                try:
+                    crops_zona = self.pdf_processor.get_zona_numero_cliente(imagen)
+                    for crop in crops_zona:
+                        try:
+                            import pytesseract
+                            texto_crop = pytesseract.image_to_string(
+                                crop,
+                                lang=self.ocr_service.language,
+                                config='--psm 6'
+                            )
+                            texto_crop_norm = self.ocr_service.normalize_text(texto_crop)
+                            num_cand = self.extractor.extraer_numero_cliente(texto_crop_norm)
+                            if num_cand:
+                                votos_num_cliente.append(num_cand)
+                                self.logger.debug(f"   Zona num_cliente: {num_cand}")
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+                # Número, fecha y número de cliente por mayoría de votos
                 if votos_numero:
                     datos.numero = Counter(votos_numero).most_common(1)[0][0]
                 if votos_fecha:
                     datos.fecha = Counter(votos_fecha).most_common(1)[0][0]
+                if votos_num_cliente:
+                    datos.numero_cliente = Counter(votos_num_cliente).most_common(1)[0][0]
 
                 datos.confianza = confianza
                 self.logger.log_ocr(pdf_path, 0, confianza)
-
-                # El nombre final SIEMPRE viene del Excel de clientes.
-                # Si no hay coincidencia suficiente → None → irá a errores.
-                if self.cliente_lookup and self.cliente_lookup.total_clientes() > 0:
-                    nombre_excel = self.cliente_lookup.corregir(datos.cliente or '')
-                    self.logger.debug(
-                        f"   Lookup ({self.cliente_lookup.total_clientes()} clientes): "
-                        f"'{datos.cliente}' → '{nombre_excel}'"
-                    )
-                    datos.cliente = nombre_excel  # None si no encontró match
-                elif self.cliente_lookup and self.cliente_lookup.total_clientes() == 0:
-                    self.logger.debug(
-                        "   ⚠️  Lookup sin clientes cargados (clientes.xlsx no encontrado) "
-                        "— usando nombre OCR directamente"
-                    )
-
-                campos = sum([bool(datos.fecha), bool(datos.numero), bool(datos.cliente)])
-                self.logger.debug(f"   [2/7] ✅ OCR+Extracción ({campos}/3 campos)")
+                self.logger.debug(
+                    f"   [2/7] ✅ OCR+Extracción: num={datos.numero} "
+                    f"fecha={datos.fecha} num_cliente={datos.numero_cliente}"
+                )
 
             except Exception as e:
                 return self._manejar_error(
+                    pdf_path, "Error_OCR",
+                    f"Error en OCR: {e}", inicio
+                )
+
+            # PASO 3: Lookup del nombre por número de cliente
+            if not datos.numero_cliente:
+                return self._manejar_error(
                     pdf_path,
-                    "Error_OCR",
-                    f"Error en OCR: {e}",
+                    "CLIENTE_NO_DETECTADO",
+                    "No se pudo extraer el número de cliente del albarán",
                     inicio
                 )
+
+            if self.cliente_lookup:
+                nombre = self.cliente_lookup.buscar_por_numero(datos.numero_cliente)
+                self.logger.debug(
+                    f"   Lookup: '{datos.numero_cliente}' → '{nombre}' "
+                    f"({self.cliente_lookup.total_clientes()} clientes cargados)"
+                )
+                if nombre is None:
+                    return self._manejar_error(
+                        pdf_path,
+                        "CLIENTE_NO_ENCONTRADO_EN_CSV",
+                        f"Número de cliente '{datos.numero_cliente}' no encontrado en el archivo de clientes",
+                        inicio
+                    )
+                datos.cliente = nombre
+            else:
+                # Sin lookup configurado — usar número como nombre provisional
+                datos.cliente = datos.numero_cliente
+                self.logger.debug("   ⚠️  Sin lookup configurado — usando número como nombre")
 
             # PASO 4: Validación de datos
             es_valido, errores = self.extractor.validar_datos(datos)
-
             if not es_valido:
-                mensaje_errores = "; ".join(errores)
                 return self._manejar_error(
-                    pdf_path,
-                    "Datos_invalidos",
-                    mensaje_errores,
-                    inicio
+                    pdf_path, "Datos_invalidos",
+                    "; ".join(errores), inicio
                 )
-
             self.logger.debug(f"   [4/7] ✅ Datos validados")
 
             # PASO 5: Crear entidades de dominio
@@ -235,28 +214,21 @@ class ProcesarAlbaranUseCase:
                 fecha_vo = FechaAlbaran(datos.fecha)
                 numero_vo = NumeroAlbaran(datos.numero)
                 cliente = Cliente(nombre=datos.cliente)
-
                 self.logger.debug(f"   [5/7] ✅ Entidades creadas")
-
             except (DatosInvalidosException, ClienteInvalidoException) as e:
                 return self._manejar_error(
-                    pdf_path,
-                    "Entidad_invalida",
-                    str(e),
-                    inicio
+                    pdf_path, "Entidad_invalida",
+                    str(e), inicio
                 )
 
             # PASO 6: Verificar duplicados
             if self.albaran_repo.exists(numero_vo, fecha_vo):
                 self.logger.log_duplicado(pdf_path, int(numero_vo), str(fecha_vo))
                 return self._manejar_error(
-                    pdf_path,
-                    "Duplicado",
+                    pdf_path, "Duplicado",
                     f"Ya existe albarán #{numero_vo} del {fecha_vo}",
-                    inicio,
-                    es_duplicado=True
+                    inicio, es_duplicado=True
                 )
-
             self.logger.debug(f"   [6/7] ✅ No duplicado")
 
             # PASO 7: Crear albarán
@@ -269,32 +241,24 @@ class ProcesarAlbaranUseCase:
 
             # PASO 8: Guardar en BD
             try:
-                # Guardar o actualizar cliente
                 cliente_guardado = self.cliente_repo.save(cliente)
                 cliente_guardado.incrementar_contador(fecha_vo.to_datetime())
                 self.cliente_repo.save(cliente_guardado)
 
-                # Guardar albarán
                 albaran_guardado = self.albaran_repo.save(albaran)
-
                 self.logger.debug(f"   [7/7] ✅ Guardado en BD (ID: {albaran_guardado.id})")
 
             except AlbaranDuplicadoException:
-                # Duplicado detectado a nivel de BD (por si acaso)
                 self.logger.log_duplicado(pdf_path, int(numero_vo), str(fecha_vo))
                 return self._manejar_error(
-                    pdf_path,
-                    "Duplicado_BD",
+                    pdf_path, "Duplicado_BD",
                     f"Duplicado detectado en BD: #{numero_vo} del {fecha_vo}",
-                    inicio,
-                    es_duplicado=True
+                    inicio, es_duplicado=True
                 )
             except Exception as e:
                 return self._manejar_error(
-                    pdf_path,
-                    "Error_BD",
-                    f"Error al guardar en BD: {e}",
-                    inicio
+                    pdf_path, "Error_BD",
+                    f"Error al guardar en BD: {e}", inicio
                 )
 
             # PASO 9: Mover archivo a carpeta del cliente
@@ -308,35 +272,25 @@ class ProcesarAlbaranUseCase:
                     nuevo_nombre=nuevo_nombre
                 )
 
-                # Actualizar ruta en albarán
                 albaran_guardado.marcar_como_procesado(ruta_final)
-
                 self.logger.log_movimiento_archivo(pdf_path, ruta_final)
 
             except FileExistsError:
                 return self._manejar_error(
-                    pdf_path,
-                    "Archivo_existe",
+                    pdf_path, "Archivo_existe",
                     "Ya existe un archivo con ese nombre en la carpeta del cliente",
                     inicio
                 )
             except Exception as e:
                 return self._manejar_error(
-                    pdf_path,
-                    "Error_movimiento",
-                    f"Error al mover archivo: {e}",
-                    inicio
+                    pdf_path, "Error_movimiento",
+                    f"Error al mover archivo: {e}", inicio
                 )
 
             # ÉXITO
             tiempo_ms = (time.time() - inicio) * 1000
-
             self.logger.log_procesamiento_exito(
-                pdf_path,
-                datos.cliente,
-                datos.numero,
-                datos.fecha,
-                tiempo_ms
+                pdf_path, datos.cliente, datos.numero, datos.fecha, tiempo_ms
             )
 
             return ResultadoProcesamiento(
@@ -347,16 +301,12 @@ class ProcesarAlbaranUseCase:
             )
 
         except Exception as e:
-            # Error inesperado
             self.logger.error(
                 f"Error inesperado procesando {nombre_archivo}: {e}",
                 exc_info=True
             )
             return self._manejar_error(
-                pdf_path,
-                "Error_inesperado",
-                str(e),
-                inicio
+                pdf_path, "Error_inesperado", str(e), inicio
             )
 
     def _manejar_error(
@@ -367,35 +317,17 @@ class ProcesarAlbaranUseCase:
         inicio: float,
         es_duplicado: bool = False
     ) -> ResultadoProcesamiento:
-        """
-        Maneja un error moviendo el archivo a la carpeta de errores.
-
-        Args:
-            pdf_path: Ruta al PDF
-            razon: Razón del error
-            mensaje: Mensaje descriptivo
-            inicio: Timestamp de inicio
-            es_duplicado: Si es un error de duplicado
-
-        Returns:
-            ResultadoProcesamiento: Resultado con error
-        """
         tiempo_ms = (time.time() - inicio) * 1000
 
-        # Log
         if not es_duplicado:
             self.logger.log_procesamiento_error(pdf_path, mensaje)
 
-        # Mover a carpeta de errores
         try:
             if self.file_system.existe_archivo(pdf_path):
                 self.file_system.mover_a_errores(pdf_path, razon=razon)
                 self.logger.debug(f"   ↘️  Movido a carpeta de errores")
         except Exception as e:
-            self.logger.error(
-                f"No se pudo mover a errores: {e}",
-                exc_info=True
-            )
+            self.logger.error(f"No se pudo mover a errores: {e}", exc_info=True)
 
         return ResultadoProcesamiento(
             exito=False,

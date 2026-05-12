@@ -177,6 +177,49 @@ class PDFProcessor:
 
         return variantes
 
+    def get_zona_numero_cliente(self, image: Image.Image) -> list:
+        """
+        Recorta y amplía la zona inferior-derecha donde Sufexa imprime
+        el número de cliente (4300XXXX). Devuelve variantes preprocesadas
+        para OCR dedicado con PSM 7 (línea única).
+
+        El número aparece siempre en el último 30% de altura y el 35%
+        derecho del albarán. Ampliar 3x mejora la legibilidad de dígitos
+        pegados al borde del recuadro.
+        """
+        from PIL import ImageEnhance
+
+        w, h = image.size
+        # Zona inferior-derecha donde está el número de cliente
+        left   = int(w * 0.60)
+        top    = int(h * 0.70)
+        right  = w
+        bottom = h
+
+        crop = image.crop((left, top, right, bottom))
+
+        # Escalar 3x para que el OCR vea los dígitos con más detalle
+        nuevo_w = (right - left) * 3
+        nuevo_h = (bottom - top) * 3
+        crop_grande = crop.resize((nuevo_w, nuevo_h), Image.LANCZOS)
+
+        gray = crop_grande.convert('L')
+        variantes = []
+
+        # V1: contraste alto
+        variantes.append(ImageEnhance.Contrast(gray).enhance(2.5))
+
+        # V2: binarización suave (captura tinta tenue cerca del borde)
+        variantes.append(gray.point(lambda x: 0 if x < 90 else 255, '1'))
+
+        # V3: binarización media
+        variantes.append(gray.point(lambda x: 0 if x < 115 else 255, '1'))
+
+        # V4: binarización estándar
+        variantes.append(gray.point(lambda x: 0 if x < 135 else 255, '1'))
+
+        return variantes
+
     def save_image(self, image: Image.Image, output_path: str):
         """
         Guarda una imagen en disco.
