@@ -36,7 +36,9 @@ class ExtractorDatosService:
     RE_NUMERO_ALBARA = re.compile(r'(?<![/\d])(\d{5})(?![/\d])')
 
     # Número de cliente específico de Sufexa: 4300 + 4 dígitos
-    RE_NUMERO_CLIENTE_SUFEXA = re.compile(r'\b(4300\d{4})\b')
+    # Permite espacio opcional entre grupos por errores OCR (ej: "4300 0034")
+    RE_NUMERO_CLIENTE_SUFEXA = re.compile(r'(?<!\d)(4300\s*\d{4})(?!\d)')
+    RE_NUMERO_CLIENTE_CORTO  = re.compile(r'(?<!\d)(430\d{5})(?!\d)')
 
     # Labels que preceden al número de cliente en el albarán
     RE_LABEL_CLIENTE = re.compile(
@@ -86,7 +88,12 @@ class ExtractorDatosService:
         # Estrategia 1: patrón específico 4300XXXX — muy fiable
         m = self.RE_NUMERO_CLIENTE_SUFEXA.search(texto)
         if m:
-            return m.group(1)
+            return re.sub(r'\s', '', m.group(1))  # quitar espacio si OCR lo insertó
+
+        # Estrategia 1b: misma idea pero OCR leyó "430" + 5 dígitos (ej: 4300034 → 43000034)
+        m = self.RE_NUMERO_CLIENTE_CORTO.search(texto)
+        if m:
+            return re.sub(r'\s', '', m.group(1))
 
         # Estrategia 2: label + número en la misma línea o la siguiente
         lineas = texto.split('\n')
