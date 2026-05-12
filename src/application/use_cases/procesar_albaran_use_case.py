@@ -126,10 +126,9 @@ class ProcesarAlbaranUseCase:
                         f"   Variante {i_var}: num={candidato.numero} "
                         f"fecha={candidato.fecha} num_cliente={candidato.numero_cliente}"
                     )
-                    # Log del texto OCR en variante 0 para diagnóstico
+                    # Log del texto OCR completo en variante 0 para diagnóstico
                     if i_var == 0:
-                        lineas_4300 = [l for l in texto_norm.split('\n') if '4300' in l or '430' in l]
-                        self.logger.debug(f"   OCR líneas con 430x: {lineas_4300}")
+                        self.logger.info(f"   [DIAG] texto OCR completo:\n{texto_norm[:800]}")
 
                 # Pasada adicional: OCR dedicado sobre la zona inferior-derecha
                 # donde Sufexa imprime el número de cliente. Se usa PSM 7
