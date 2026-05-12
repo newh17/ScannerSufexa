@@ -105,6 +105,7 @@ class ProcesarAlbaranUseCase:
                 votos_fecha = []
                 votos_num_cliente = []
 
+                texto_var0 = ""  # guardamos el texto de variante 0 para diagnóstico
                 for i_var, variante in enumerate(variantes):
                     try:
                         texto_ocr, conf = self.ocr_service.extract_text_with_confidence(variante)
@@ -112,6 +113,9 @@ class ProcesarAlbaranUseCase:
                         continue
 
                     texto_norm = self.ocr_service.normalize_text(texto_ocr)
+                    if i_var == 0:
+                        texto_var0 = texto_norm
+
                     candidato = self.extractor.extraer_datos(texto_norm)
                     confianza = max(confianza, conf)
 
@@ -126,9 +130,6 @@ class ProcesarAlbaranUseCase:
                         f"   Variante {i_var}: num={candidato.numero} "
                         f"fecha={candidato.fecha} num_cliente={candidato.numero_cliente}"
                     )
-                    # Log del texto OCR completo en variante 0 para diagnóstico
-                    if i_var == 0:
-                        self.logger.info(f"   [DIAG] texto OCR completo:\n{texto_norm[:800]}")
 
                 # Pasada adicional: OCR dedicado sobre la zona inferior-derecha
                 # donde Sufexa imprime el número de cliente. Se usa PSM 7
@@ -177,10 +178,12 @@ class ProcesarAlbaranUseCase:
 
             # PASO 3: Lookup del nombre por número de cliente
             if not datos.numero_cliente:
+                # Incluir texto OCR en el error para diagnóstico
+                ocr_muestra = texto_var0[:500].replace('\n', '|') if texto_var0 else "SIN_TEXTO"
                 return self._manejar_error(
                     pdf_path,
                     "CLIENTE_NO_DETECTADO",
-                    "No se pudo extraer el número de cliente del albarán",
+                    f"No se pudo extraer el número de cliente. OCR: {ocr_muestra}",
                     inicio
                 )
 
