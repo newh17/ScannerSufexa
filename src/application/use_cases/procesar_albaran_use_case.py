@@ -109,7 +109,8 @@ class ProcesarAlbaranUseCase:
                 for i_var, variante in enumerate(variantes):
                     try:
                         texto_ocr, conf = self.ocr_service.extract_text_with_confidence(variante)
-                    except Exception:
+                    except Exception as e_ocr:
+                        self.logger.info(f"   [OCR-ERR] variante {i_var}: {e_ocr}")
                         continue
 
                     texto_norm = self.ocr_service.normalize_text(texto_ocr)

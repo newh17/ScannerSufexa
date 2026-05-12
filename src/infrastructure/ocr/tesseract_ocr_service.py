@@ -136,10 +136,17 @@ class TesseractOCRService:
                 confianza_promedio: valor entre 0 y 100
         """
         try:
+            # Intentar con el idioma configurado; si falla, usar 'eng' como fallback
+            lang_usar = self.language
+            try:
+                pytesseract.image_to_string(image, lang=lang_usar, config='--psm 6')
+            except pytesseract.TesseractError:
+                lang_usar = 'eng'
+
             # Obtener datos detallados del OCR
             data = pytesseract.image_to_data(
                 image,
-                lang=self.language,
+                lang=lang_usar,
                 config=self.config,
                 output_type=pytesseract.Output.DICT
             )
@@ -147,7 +154,7 @@ class TesseractOCRService:
             # Extraer texto completo
             texto = pytesseract.image_to_string(
                 image,
-                lang=self.language,
+                lang=lang_usar,
                 config=self.config
             )
 
